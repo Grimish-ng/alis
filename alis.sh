@@ -390,7 +390,7 @@ function ask_passwords() {
                 echo ""
                 if [ "$PASSWORD" == "$PASSWORD_RETYPE" ]; then
                     local PASSWORD_TYPED="true"
-                    ADDITIONAL_USERS[$I]="$USER=$PASSWORD"
+                    ADDITIONAL_USERS[I]="$USER=$PASSWORD"
                 else
                     echo "User ($USER) password don't match. Please, type again."
                 fi
@@ -402,17 +402,17 @@ function ask_passwords() {
 function partition() {
     print_step "partition()"
 
-    partprobe -s $DEVICE
+    partprobe -s "$DEVICE"
 
     # setup
     partition_setup
 
     # partition
     if [ "$PARTITION_MODE" == "auto" ]; then
-        sgdisk --zap-all $DEVICE
-        sgdisk -o $DEVICE
-        wipefs -a -f $DEVICE
-        partprobe -s $DEVICE
+        sgdisk --zap-all "$DEVICE"
+        sgdisk -o "$DEVICE"
+        wipefs -a -f "$DEVICE"
+        partprobe -s "$DEVICE"
     fi
     if [ "$PARTITION_MODE" == "auto" ] || [ "$PARTITION_MODE" == "custom" ]; then
         if [ "$BIOS_TYPE" == "uefi" ]; then
@@ -472,44 +472,46 @@ function partition() {
     fi
 
     # format
-    # Delete patition filesystem in case is reinstalling in an already existing system
-    # Not fail on error
-    wipefs -a -f "$PARTITION_BOOT" || true
-    wipefs -a -f "$DEVICE_ROOT" || true
+    if [ "$PARTITION_MODE" != "manual" ]; then
+        # Delete patition filesystem in case is reinstalling in an already existing system
+        # Not fail on error
+        wipefs -a -f "$PARTITION_BOOT" || true
+        wipefs -a -f "$DEVICE_ROOT" || true
 
-    ## boot
-    if [ "$BIOS_TYPE" == "uefi" ]; then
-        mkfs.fat -n ESP -F32 "$PARTITION_BOOT"
-    fi
-    if [ "$BIOS_TYPE" == "bios" ]; then
-        mkfs.ext4 -L boot "$PARTITION_BOOT"
-    fi
-    ## root
-    if [ "$FILE_SYSTEM_TYPE" == "reiserfs" ]; then
-        mkfs."$FILE_SYSTEM_TYPE" -f -l root "$DEVICE_ROOT"
-    elif [ "$FILE_SYSTEM_TYPE" == "f2fs" ]; then
-        mkfs."$FILE_SYSTEM_TYPE" -l root "$DEVICE_ROOT"
-    else
-        mkfs."$FILE_SYSTEM_TYPE" -L root "$DEVICE_ROOT"
-    fi
-    ## mountpoint
-    for I in "${PARTITION_MOUNT_POINTS[@]}"; do
-        if [[ "$I" =~ ^!.* ]]; then
-            continue
+        ## boot
+        if [ "$BIOS_TYPE" == "uefi" ]; then
+            mkfs.fat -n ESP -F32 "$PARTITION_BOOT"
         fi
-        IFS='=' read -ra PARTITION_MOUNT_POINT <<< "$I"
-        if [ "${PARTITION_MOUNT_POINT[1]}" == "/boot" ] || [ "${PARTITION_MOUNT_POINT[1]}" == "/" ]; then
-            continue
+        if [ "$BIOS_TYPE" == "bios" ]; then
+            mkfs.ext4 -L boot "$PARTITION_BOOT"
         fi
-        local PARTITION_DEVICE="$(partition_device "$DEVICE" "${PARTITION_MOUNT_POINT[0]}")"
+        ## root
         if [ "$FILE_SYSTEM_TYPE" == "reiserfs" ]; then
-            mkfs."$FILE_SYSTEM_TYPE" -f "$PARTITION_DEVICE"
+            mkfs."$FILE_SYSTEM_TYPE" -f -l root "$DEVICE_ROOT"
         elif [ "$FILE_SYSTEM_TYPE" == "f2fs" ]; then
-            mkfs."$FILE_SYSTEM_TYPE" "$PARTITION_DEVICE"
+            mkfs."$FILE_SYSTEM_TYPE" -l root "$DEVICE_ROOT"
         else
-            mkfs."$FILE_SYSTEM_TYPE" "$PARTITION_DEVICE"
+            mkfs."$FILE_SYSTEM_TYPE" -L root "$DEVICE_ROOT"
         fi
-    done
+        ## mountpoint
+        for I in "${PARTITION_MOUNT_POINTS[@]}"; do
+            if [[ "$I" =~ ^!.* ]]; then
+                continue
+            fi
+            IFS='=' read -ra PARTITION_MOUNT_POINT <<< "$I"
+            if [ "${PARTITION_MOUNT_POINT[1]}" == "/boot" ] || [ "${PARTITION_MOUNT_POINT[1]}" == "/" ]; then
+                continue
+            fi
+            local PARTITION_DEVICE="$(partition_device "$DEVICE" "${PARTITION_MOUNT_POINT[0]}")"
+            if [ "$FILE_SYSTEM_TYPE" == "reiserfs" ]; then
+                mkfs."$FILE_SYSTEM_TYPE" -f "$PARTITION_DEVICE"
+            elif [ "$FILE_SYSTEM_TYPE" == "f2fs" ]; then
+                mkfs."$FILE_SYSTEM_TYPE" "$PARTITION_DEVICE"
+            else
+                mkfs."$FILE_SYSTEM_TYPE" "$PARTITION_DEVICE"
+            fi
+        done
+    fi
 
     # options
     partition_options
@@ -1204,11 +1206,11 @@ function bootloader_grub() {
 
     if [ "$BIOS_TYPE" == "uefi" ]; then
         pacman_install "efibootmgr"
-        arch-chroot "${MNT_DIR}" grub-install --target=x86_64-efi --bootloader-id=grub --efi-directory=$ESP_DIRECTORY --recheck
+        arch-chroot "${MNT_DIR}" grub-install --target=x86_64-efi --bootloader-id=grub --efi-directory="$ESP_DIRECTORY" --recheck
         #arch-chroot "${MNT_DIR}" efibootmgr --create --disk $DEVICE --part $PARTITION_BOOT_NUMBER --loader /EFI/grub/grubx64.efi --label "GRUB Boot Manager"
     fi
     if [ "$BIOS_TYPE" == "bios" ]; then
-        arch-chroot "${MNT_DIR}" grub-install --target=i386-pc --recheck $DEVICE
+        arch-chroot "${MNT_DIR}" grub-install --target=i386-pc --recheck "$DEVICE"
     fi
 
     arch-chroot "${MNT_DIR}" grub-mkconfig -o "$BOOT_DIRECTORY/grub/grub.cfg"
@@ -1340,9 +1342,9 @@ Operation = Upgrade
 Target = systemd
 
 [Action]
-Description = Updating systemd-boot
+Description = Updating systemd-boot...
 When = PostTransaction
-Exec = /usr/bin/bootctl update
+Exec = /usr/bin/systemctl restart systemd-boot-update.service
 EOT
 
     local SYSTEMD_MICROCODE=""
