@@ -136,6 +136,8 @@ function facts_commons() {
         CPU_VENDOR="intel"
     elif lscpu | grep -q "AuthenticAMD"; then
         CPU_VENDOR="amd"
+    else
+        CPU_VENDOR=""
     fi
 
     if lspci -nn | grep "\[03" | grep -qi "intel"; then
@@ -146,14 +148,29 @@ function facts_commons() {
         GPU_VENDOR="nvidia"
     elif lspci -nn | grep "\[03" | grep -qi "vmware"; then
         GPU_VENDOR="vmware"
+    else
+        GPU_VENDOR=""
     fi
 
     if systemd-detect-virt | grep -qi "oracle"; then
         VIRTUALBOX="true"
+    else
+        VIRTUALBOX="false"
     fi
 
     if systemd-detect-virt | grep -qi "vmware"; then
         VMWARE="true"
+    else
+        VMWARE="false"
+    fi
+
+    INITRD_MICROCODE=""
+    if [ "$VIRTUALBOX" != "true" ] && [ "$VMWARE" != "true" ]; then
+        if [ "$CPU_VENDOR" == "intel" ]; then
+            INITRD_MICROCODE="intel-ucode.img"
+        elif [ "$CPU_VENDOR" == "amd" ]; then
+            INITRD_MICROCODE="amd-ucode.img"
+        fi
     fi
 
     USER_NAME_INSTALL="$(whoami)"
@@ -406,6 +423,9 @@ function partition_options() {
     PARTITION_OPTIONS_BOOT="defaults"
     PARTITION_OPTIONS="defaults"
 
+    if [ "$BIOS_TYPE" == "uefi" ]; then
+        PARTITION_OPTIONS_BOOT="$PARTITION_OPTIONS_BOOT,uid=0,gid=0,fmask=0077,dmask=0077"
+    fi
     if [ "$DEVICE_TRIM" == "true" ]; then
         PARTITION_OPTIONS_BOOT="$PARTITION_OPTIONS_BOOT,noatime"
         PARTITION_OPTIONS="$PARTITION_OPTIONS,noatime"
